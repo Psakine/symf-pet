@@ -1,0 +1,66 @@
+version: '3.8'
+services:
+  database:
+    env_file:
+      - ./.env
+    container_name: database
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_USER: ${DATABASE_LOGIN}
+    volumes:
+      - ./docker/pgdata/db:/var/lib/pgdata
+    ports:
+      - ${DATABASE_PORT_EXTERNAL}:${DATABASE_PORT_INTERNAL}
+  php:
+    env_file:
+      - ./.env
+    container_name: php
+    build:
+      context: ./docker/php/
+      args:
+        APP_HOST: ${APP_HOST}
+        XDEBUG_PORT: ${XDEBUG_PORT}
+        XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY}
+    ports:
+      - ${PHP_PORT_EXTERNAL}:${PHP_PORT_INTERNAL}
+    volumes:
+      - ./:/var/www
+    depends_on:
+      - database
+  nginx:
+    env_file:
+      - ./.env
+    container_name: nginx
+    image: nginx:latest
+    environment:
+      NGINX_PORT_INTERNAL: ${NGINX_PORT_INTERNAL}
+      PHP_PORT_INTERNAL: ${PHP_PORT_INTERNAL}
+      APP_HOST: ${APP_HOST}
+    ports:
+      - ${NGINX_PORT_EXTERNAL}:${NGINX_PORT_INTERNAL}
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      - php
+      - database
+  rabbitmq:
+    build:
+      context: .
+      dockerfile: ./docker/rabbitmq/Dockerfile
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://${NGINX_PORT_INTERNAL}:15672"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+volumes:
+  rabbitmq-data:
